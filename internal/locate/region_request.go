@@ -615,16 +615,24 @@ func newReplicaSelector(regionCache *RegionCache, regionID RegionVerID, req *tik
 	}
 	regionStore := cachedRegion.getStore()
 	replicas := make([]*replica, 0, regionStore.accessStoreNum(tiKVOnly))
+	witnesses := make([]*replica, 0, regionStore.accessStoreNum(tiKVOnly))
 	for _, storeIdx := range regionStore.accessIndex[tiKVOnly] {
-		replicas = append(replicas, &replica{
+		peer := cachedRegion.meta.Peers[storeIdx]
+		replica := &replica{
 			store:    regionStore.stores[storeIdx],
-			peer:     cachedRegion.meta.Peers[storeIdx],
+			peer:     peer,
 			epoch:    regionStore.storeEpochs[storeIdx],
 			attempts: 0,
-		})
+		}
+		if !peer.IsWitness {
+			replicas = append(replicas, replica)
+		} else {
+			witnesses = append(witnesses, replica)
+		}
 	}
 	var state selectorState
 	if !req.ReplicaReadType.IsFollowerRead() {
+		replicas = append(replicas, witnesses...)
 		if regionCache.enableForwarding && regionStore.proxyTiKVIdx >= 0 {
 			state = &accessByKnownProxy{leaderIdx: regionStore.workTiKVIdx}
 		} else {
@@ -1457,7 +1465,7 @@ func (s *RegionRequestSender) onRegionError(bo *retry.Backoffer, ctx *RPCContext
 		if err != nil {
 			return false, err
 		}
-		return false, nil
+		return true, nil
 	}
 
 	// Since we expect that the workload should be stopped during the flashback progress,
