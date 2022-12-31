@@ -1411,6 +1411,8 @@ func regionErrorToLabel(e *errorpb.Error) string {
 		return "flashback_in_progress"
 	} else if e.GetFlashbackNotPrepared() != nil {
 		return "flashback_not_prepared"
+	} else if e.GetIsWitness() != nil {
+		return "peer_is_witness"
 	}
 	return "unknown"
 }
@@ -1465,7 +1467,7 @@ func (s *RegionRequestSender) onRegionError(bo *retry.Backoffer, ctx *RPCContext
 		if err != nil {
 			return false, err
 		}
-		return true, nil
+		return false, nil
 	}
 
 	// Since we expect that the workload should be stopped during the flashback progress,
@@ -1617,6 +1619,16 @@ func (s *RegionRequestSender) onRegionError(bo *retry.Backoffer, ctx *RPCContext
 			return false, err
 		}
 		return true, nil
+	}
+
+	if regionErr.GetIsWitness() != nil {
+		s.regionCache.InvalidateCachedRegion(ctx.Region)
+		logutil.BgLogger().Debug("tikv reports `IsWitness`", zap.Stringer("ctx", ctx))
+		err = bo.Backoff(retry.BoRegionRecoveryInProgress, errors.Errorf("is witness, ctx: %v", ctx))
+		if err != nil {
+			return false, err
+		}
+		return false, nil
 	}
 
 	logutil.BgLogger().Debug("tikv reports region failed",
