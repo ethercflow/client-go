@@ -1470,6 +1470,16 @@ func (s *RegionRequestSender) onRegionError(bo *retry.Backoffer, ctx *RPCContext
 		return false, nil
 	}
 
+	if regionErr.GetIsWitness() != nil {
+		s.regionCache.InvalidateCachedRegion(ctx.Region)
+		logutil.BgLogger().Debug("tikv reports `IsWitness`", zap.Stringer("ctx", ctx))
+		err = bo.Backoff(retry.BoIsWitness, errors.Errorf("is witness, ctx: %v", ctx))
+		if err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
 	// Since we expect that the workload should be stopped during the flashback progress,
 	// if a request meets the FlashbackInProgress error, it should stop retrying immediately
 	// to avoid unnecessary backoff and potential unexpected data status to the user.
@@ -1619,16 +1629,6 @@ func (s *RegionRequestSender) onRegionError(bo *retry.Backoffer, ctx *RPCContext
 			return false, err
 		}
 		return true, nil
-	}
-
-	if regionErr.GetIsWitness() != nil {
-		s.regionCache.InvalidateCachedRegion(ctx.Region)
-		logutil.BgLogger().Debug("tikv reports `IsWitness`", zap.Stringer("ctx", ctx))
-		err = bo.Backoff(retry.BoRegionRecoveryInProgress, errors.Errorf("is witness, ctx: %v", ctx))
-		if err != nil {
-			return false, err
-		}
-		return false, nil
 	}
 
 	logutil.BgLogger().Debug("tikv reports region failed",
