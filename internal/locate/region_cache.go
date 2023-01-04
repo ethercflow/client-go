@@ -267,6 +267,12 @@ func newRegion(bo *retry.Backoffer, c *RegionCache, pdRegion *pd.Region) (*Regio
 		if addr == "" {
 			continue
 		}
+
+		// Filter the witness peer.
+		if p.IsWitness && !isSamePeer(p, leader) {
+			continue
+		}
+
 		if isSamePeer(p, leader) {
 			leaderAccessIdx = AccessIndex(len(rs.accessIndex[tiKVOnly]))
 		}

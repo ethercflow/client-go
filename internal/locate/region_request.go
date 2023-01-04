@@ -618,6 +618,7 @@ func newReplicaSelector(regionCache *RegionCache, regionID RegionVerID, req *tik
 	}
 	regionStore := cachedRegion.getStore()
 	replicas := make([]*replica, 0, regionStore.accessStoreNum(tiKVOnly))
+	leaderStoreIdx := regionStore.accessIndex[tiKVOnly][regionStore.workTiKVIdx]
 	log.Error("XXX",
 		zap.Int("regionStore.accessStoreNum(tiKVOnly)", regionStore.accessStoreNum(tiKVOnly)),
 		zap.Int("regionStore.workTiKVIdx", int(regionStore.workTiKVIdx)))
@@ -632,7 +633,7 @@ func newReplicaSelector(regionCache *RegionCache, regionID RegionVerID, req *tik
 		// Since the witness is read-write prohibited, it does not make sense to send requests
 		// to it unless it is the leader. When it is the leader and the transfer leader encounters
 		// a problem, the backoff timeout is triggered, and the client can give a more accurate error message
-		if !peer.IsWitness {
+		if !peer.IsWitness && storeIdx != leaderStoreIdx {
 			replicas = append(replicas, replica)
 		}
 	}
