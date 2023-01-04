@@ -615,7 +615,7 @@ func newReplicaSelector(regionCache *RegionCache, regionID RegionVerID, req *tik
 	}
 	regionStore := cachedRegion.getStore()
 	replicas := make([]*replica, 0, regionStore.accessStoreNum(tiKVOnly))
-	witnesses := make([]*replica, 0, regionStore.accessStoreNum(tiKVOnly))
+	leaderStoreIdx := regionStore.accessIndex[tiKVOnly][regionStore.workTiKVIdx]
 	for _, storeIdx := range regionStore.accessIndex[tiKVOnly] {
 		peer := cachedRegion.meta.Peers[storeIdx]
 		replica := &replica{
@@ -624,15 +624,15 @@ func newReplicaSelector(regionCache *RegionCache, regionID RegionVerID, req *tik
 			epoch:    regionStore.storeEpochs[storeIdx],
 			attempts: 0,
 		}
-		if !peer.IsWitness {
+		// Since the witness is read-write prohibited, it does not make sense to send requests
+		// to it unless it is the leader. When it is the leader and the transfer leader encounters
+		// a problem, the backoff timeout is triggered, and the client can give a more accurate error message
+		if !peer.IsWitness || leaderStoreIdx == storeIdx {
 			replicas = append(replicas, replica)
-		} else {
-			witnesses = append(witnesses, replica)
 		}
 	}
 	var state selectorState
 	if !req.ReplicaReadType.IsFollowerRead() {
-		replicas = append(replicas, witnesses...)
 		if regionCache.enableForwarding && regionStore.proxyTiKVIdx >= 0 {
 			state = &accessByKnownProxy{leaderIdx: regionStore.workTiKVIdx}
 		} else {
