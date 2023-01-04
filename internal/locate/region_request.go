@@ -53,6 +53,7 @@ import (
 	"github.com/pingcap/kvproto/pkg/errorpb"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/log"
 	"github.com/pkg/errors"
 	tikverr "github.com/tikv/client-go/v2/error"
 	"github.com/tikv/client-go/v2/internal/client"
@@ -264,8 +265,9 @@ type replicaSelector struct {
 // selectorState is the interface of states of the replicaSelector.
 // Here is the main state transition diagram:
 //
-//                                    exceeding maxReplicaAttempt
-//           +-------------------+   || RPC failure && unreachable && no forwarding
+//	                         exceeding maxReplicaAttempt
+//	+-------------------+   || RPC failure && unreachable && no forwarding
+//
 // +-------->+ accessKnownLeader +----------------+
 // |         +------+------------+                |
 // |                |                             |
@@ -282,7 +284,8 @@ type replicaSelector struct {
 // | leader becomes   v                           +---+---+
 // | reachable  +-----+-----+ all proxies are tried   ^
 // +------------+tryNewProxy+-------------------------+
-//              +-----------+
+//
+//	+-----------+
 type selectorState interface {
 	next(*retry.Backoffer, *replicaSelector) (*RPCContext, error)
 	onSendSuccess(*replicaSelector)
@@ -615,7 +618,9 @@ func newReplicaSelector(regionCache *RegionCache, regionID RegionVerID, req *tik
 	}
 	regionStore := cachedRegion.getStore()
 	replicas := make([]*replica, 0, regionStore.accessStoreNum(tiKVOnly))
-	leaderStoreIdx := regionStore.accessIndex[tiKVOnly][regionStore.workTiKVIdx]
+	log.Error("XXX",
+		zap.Int("regionStore.accessStoreNum(tiKVOnly)", regionStore.accessStoreNum(tiKVOnly)),
+		zap.Int("regionStore.workTiKVIdx", int(regionStore.workTiKVIdx)))
 	for _, storeIdx := range regionStore.accessIndex[tiKVOnly] {
 		peer := cachedRegion.meta.Peers[storeIdx]
 		replica := &replica{
@@ -627,7 +632,7 @@ func newReplicaSelector(regionCache *RegionCache, regionID RegionVerID, req *tik
 		// Since the witness is read-write prohibited, it does not make sense to send requests
 		// to it unless it is the leader. When it is the leader and the transfer leader encounters
 		// a problem, the backoff timeout is triggered, and the client can give a more accurate error message
-		if !peer.IsWitness || leaderStoreIdx == storeIdx {
+		if !peer.IsWitness {
 			replicas = append(replicas, replica)
 		}
 	}
